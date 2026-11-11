@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cek Kualitas Udara</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px; background: #f3f6f6; color: #1c2128; line-height: 1.5; }
+    .kartu { background: #fff; border-radius: 10px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .baris { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 16px; }
+    .baris .kartu { margin-bottom: 0; }
+    @media (max-width: 480px) { .baris { grid-template-columns: 1fr; } } /* di HP layar sempit jadi 1 kolom */
+    .angka { font-size: 28px; font-weight: bold; color: #0f8f7e; }
+    .error { color: #c0392b; font-weight: 600; }
+    .grafik { position: relative; height: 300px; }
+    .kecil { color: #5b6770; font-size: 14px; }
+    h1, h2 { margin-top: 0; }
+    input[type=text] { padding: 10px; width: 100%; max-width: 420px; font-size: 16px; box-sizing: border-box; }
+    button { padding: 10px 18px; font-size: 16px; background: #0e3b3d; color: #fff; border: 0; border-radius: 6px; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: wait; }
+
+    /* Warna tiap status kualitas udara (dipakai oleh lencana status dan legenda) */
+    .status { display: inline-block; color: #fff; padding: 6px 16px; border-radius: 999px; font-weight: 700; font-size: 20px; }
+    .legenda { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .legenda span { color: #fff; padding: 3px 10px; border-radius: 999px; font-size: 13px; }
+    .kosong { background: #9aa5ab; }
+    .baik { background: #2e9d5b; }
+    .sedang { background: #e0b400; color: #1c2128; } /* teks gelap supaya terbaca di latar kuning */
+    .kurang { background: #f28c28; }
+    .tidak-sehat { background: #e4572e; }
+    .sangat { background: #8e44ad; }
+    .berbahaya { background: #7b1e1e; }
+  </style>
+</head>
+<body>
+  <h1>Cek Kualitas Udara</h1>
+  <p class="kecil">Ketik nama tempat yang ingin kamu cek, lalu tekan tombol. Bisa nama kota, kabupaten, atau daerah, bahkan kota di luar negeri.</p>
+
+  <form method="POST" class="kartu" id="form-cari">
+    <label for="tempat"><b>Nama tempat</b></label><br>
+    <input type="text" id="tempat" name="tempat" value="{{ tempat }}" placeholder="Contoh: Sleman, Semarang, Tokyo" required>
+    <button type="submit" id="tombol-cari">Cek Udara</button>
+  </form>
+
+  {% if error %}
+    <p class="error">{{ error }}</p>
+  {% else %}
+
+    <div class="kartu">
+      <h2>Udara di {{ detail.nama }} saat ini</h2>
+      <span class="status {{ detail.kelas }}">{{ detail.status }}</span>
+      <p>{{ detail.saran }}</p>
+      <p class="kecil">
+        Angka indeks kualitas udara: <b>{{ detail.indeks }}</b> (semakin kecil semakin baik)<br>
+        Data diperbarui: {{ detail.waktu }}
+      </p>
+      <div class="legenda">
+        <span class="baik">0–50 Baik</span>
+        <span class="sedang">51–100 Sedang</span>
+        <span class="kurang">101–150 Kurang sehat</span>
+        <span class="tidak-sehat">151–200 Tidak sehat</span>
+        <span class="sangat">201–300 Sangat tidak sehat</span>
+        <span class="berbahaya">301+ Berbahaya</span>
+      </div>
+    </div>
+
+    <div class="baris">
+      <div class="kartu">
+        <div class="angka">{{ detail.debu_halus }}</div>
+        <b>Debu halus (PM2.5)</b>
+        <p class="kecil">Partikel sangat kecil dari asap kendaraan dan pembakaran. Bisa masuk sampai ke paru-paru.</p>
+      </div>
+      <div class="kartu">
+        <div class="angka">{{ detail.debu_kasar }}</div>
+        <b>Debu kasar (PM10)</b>
+        <p class="kecil">Debu dan serbuk yang lebih besar, biasanya membuat udara terasa berdebu.</p>
+      </div>
+      <div class="kartu">
+        <div class="angka">{{ detail.co }}</div>
+        <b>Gas karbon monoksida (CO)</b>
+        <p class="kecil">Gas tidak berbau dari knalpot kendaraan dan pembakaran.</p>
+      </div>
+      <div class="kartu">
+        <div class="angka">{{ detail.co2 }}</div>
+        <b>Gas karbon dioksida (CO2)</b>
+        <p class="kecil">Gas hasil pernapasan dan pembakaran. Satuannya ppm (bagian per sejuta), berbeda dengan angka lainnya.</p>
+      </div>
+    </div>
+    <p class="kecil">Satuan debu halus, debu kasar, dan CO: mikrogram per meter kubik udara (µg/m³). Satuan CO2: ppm.</p>
+
+    <div class="kartu">
+      <h2>Perubahan kadar debu dari waktu ke waktu</h2>
+      <p class="kecil">Dari kemarin sampai besok di {{ detail.nama }}. Semakin tinggi garis, semakin banyak debu di udara.</p>
+      <div class="grafik"><canvas id="grafikWaktu"></canvas></div>
+    </div>
+
+    <div class="kartu">
+      <h2>Perbandingan debu halus antar kota</h2>
+      <p class="kecil">Kondisi saat ini. Semakin tinggi batang, semakin kotor udaranya.</p>
+      <div class="grafik"><canvas id="grafikBanding"></canvas></div>
+    </div>
+
+    <!-- Data grafik dari Flask disimpan di atribut HTML, lalu dibaca oleh JavaScript di bawah -->
+    <div id="data-grafik" data-grafik='{{ grafik | tojson }}' hidden></div>
+
+    <script>
+      const data = JSON.parse(document.getElementById("data-grafik").dataset.grafik);
+
+      new Chart(document.getElementById("grafikWaktu"), {
+        type: "line",
+        data: {
+          labels: data.jam,
+          datasets: [
+            { label: "Debu halus (PM2.5)", data: data.debu_halus_jam, borderColor: "#e4572e", pointRadius: 0, tension: 0.2 },
+            { label: "Debu kasar (PM10)", data: data.debu_kasar_jam, borderColor: "#3a6ea5", pointRadius: 0, tension: 0.2 }
+          ]
+        },
+        options: {
+          maintainAspectRatio: false,
+          scales: {
+            x: { title: { display: true, text: "Tanggal / jam" }, ticks: { maxTicksLimit: 8 } },
+            y: { title: { display: true, text: "Kadar debu (µg/m³)" } }
+          }
+        }
+      });
+
+      new Chart(document.getElementById("grafikBanding"), {
+        type: "bar",
+        data: {
+          labels: data.kota,
+          datasets: [{ label: "Debu halus (PM2.5)", data: data.debu_halus_kota, backgroundColor: "#0f8f7e" }]
+        },
+        options: {
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { y: { title: { display: true, text: "Kadar debu halus (µg/m³)" } } }
+        }
+      });
+    </script>
+  {% endif %}
+
+  <!-- Di luar blok if/else supaya tetap jalan saat terjadi error -->
+  <script>
+    document.getElementById("form-cari").addEventListener("submit", function () {
+      const tombol = document.getElementById("tombol-cari");
+      tombol.disabled = true;
+      tombol.textContent = "Mencari...";
+    });
+  </script>
+</body>
+</html>
